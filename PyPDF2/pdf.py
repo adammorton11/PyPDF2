@@ -349,7 +349,7 @@ class PdfFileWriter(object):
 
                 })
         	# Update the root
-            self._root_object.update({
+        self._root_object.update({
                 NameObject("/Names"): embeddedFilesDictionary
                 })
 
