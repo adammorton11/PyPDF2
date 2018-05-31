@@ -328,31 +328,28 @@ class PdfFileWriter(object):
 
         """
         try:
-            embeddedFilesDictionary=self._root_object["/Names"]["/EmbeddedFiles"]
+            namesDict = self._root_object["/Names"]
         except:
-            embeddedFilesDictionary=DictionaryObject()
-
+            namesDict = DictionaryObject()
         try:
-            embeddedFilesNamesDictionary=embeddedFilesDictionary["/Names"]
-            embeddedFilesNamesDictionary.append(createStringObject(fname))
-            embeddedFilesNamesDictionary.append(filespec)
-
+            embeddedFilesDict = namesDict["/EmbeddedFiles"]
         except:
-            embeddedFilesNamesDictionary = DictionaryObject()
-
-            embeddedFilesNamesDictionary.update({
-                NameObject("/Names"): ArrayObject([createStringObject(fname), filespec])
+            newDict = DictionaryObject()
+            namesDict.update({NameObject("/EmbeddedFiles"): newDict})
+            embeddedFilesDict = namesDict["/EmbeddedFiles"]
+        try:
+            internalNamesArray = embeddedFilesDict["/Names"]
+            internalNamesArray.append(createStringObject(fname))
+            internalNamesArray.append(filespec)
+        except:
+            embeddedFilesDict.update({NameObject("/Names"): ArrayObject([createStringObject(fname), filespec])
                 })
-				
-            embeddedFilesDictionary.update({
-				NameObject("/EmbeddedFiles"): embeddedFilesNamesDictionary
+            internalNamesArray = embeddedFilesDict["/Names"]
 
-                })
-        	# Update the root
         self._root_object.update({
-                NameObject("/Names"): embeddedFilesDictionary
-                })
-
+            NameObject("/Names"): namesDict
+            })
+        
     def appendPagesFromReader(self, reader, after_page_append=None):
         """
         Copy pages from reader to writer. Includes an optional callback parameter
@@ -632,13 +629,13 @@ class PdfFileWriter(object):
                     try:
                         newobj = data.pdf.getObject(data)
                         hashValue = newobj.hashValue()
-                    	# Check if object is already added to pdf.
-                    	if hashValue is not None and hashValue in self._idnum_hash:
-                        	return IndirectObject(self._idnum_hash[hashValue], 0, self)
+                        # Check if object is already added to pdf.
+                        if hashValue is not None and hashValue in self._idnum_hash:
+                            return IndirectObject(self._idnum_hash[hashValue], 0, self)
                         self._objects.append(None) # placeholder
                         idnum = len(self._objects)
                         if hashValue is not None:
-	                        self._idnum_hash[hashValue] = idnum
+                            self._idnum_hash[hashValue] = idnum
                         newobj_ido = IndirectObject(idnum, 0, self)
                         if data.pdf not in externMap:
                             externMap[data.pdf] = {}
@@ -960,68 +957,68 @@ class PdfFileWriter(object):
 
     
     def addURI(self, pagenum, uri, rect, border=None):
-		"""
-		
-		Add an URI from a rectangular area to the specified page.
-		This uses the basic structure of AddLink
+        """
+        
+        Add an URI from a rectangular area to the specified page.
+        This uses the basic structure of AddLink
 
-		:param int pagenum: index of the page on which to place the link.
-		:param int uri: string -- uri of resource to link to.
-		:param rect: :class:`RectangleObject<PyPDF2.generic.RectangleObject>` or array of four
-		integers specifying the clickable rectangular area
-		``[xLL, yLL, xUR, yUR]``, or string in the form ``"[ xLL yLL xUR yUR ]"``.
-		:param border: if provided, an array describing border-drawing
-		properties. See the PDF spec for details. No border will be
-		drawn if this argument is omitted.
-		
-		REMOVED FIT/ZOOM ARG
-		-John Mulligan
+        :param int pagenum: index of the page on which to place the link.
+        :param int uri: string -- uri of resource to link to.
+        :param rect: :class:`RectangleObject<PyPDF2.generic.RectangleObject>` or array of four
+        integers specifying the clickable rectangular area
+        ``[xLL, yLL, xUR, yUR]``, or string in the form ``"[ xLL yLL xUR yUR ]"``.
+        :param border: if provided, an array describing border-drawing
+        properties. See the PDF spec for details. No border will be
+        drawn if this argument is omitted.
+        
+        REMOVED FIT/ZOOM ARG
+        -John Mulligan
 
-		"""
+        """
 
-		
-		
-		
-		pageLink = self.getObject(self._pages)['/Kids'][pagenum]
-		pageRef = self.getObject(pageLink)
-		
-		if border is not None:
-			borderArr = [NameObject(n) for n in border[:3]]
-			if len(border) == 4:
-				dashPattern = ArrayObject([NameObject(n) for n in border[3]])
-				borderArr.append(dashPattern)
-		else:
-			borderArr = [NumberObject(2)] * 3
+        
+        
+        
+        pageLink = self.getObject(self._pages)['/Kids'][pagenum]
+        pageRef = self.getObject(pageLink)
+        
+        if border is not None:
+            borderArr = [NameObject(n) for n in border[:3]]
+            if len(border) == 4:
+                dashPattern = ArrayObject([NameObject(n) for n in border[3]])
+                borderArr.append(dashPattern)
+        else:
+            borderArr = [NumberObject(2)] * 3
 
-		if isString(rect):
-			rect = NameObject(rect)
-		elif isinstance(rect, RectangleObject):
-			pass
-		else:
-			rect = RectangleObject(rect)
+        if isString(rect):
+            rect = NameObject(rect)
+        elif isinstance(rect, RectangleObject):
+            pass
+        else:
+            rect = RectangleObject(rect)
 
-		lnk2 = DictionaryObject()
+        lnk2 = DictionaryObject()
 
-		lnk2.update({
-		NameObject('/S'): NameObject('/URI'),
-		NameObject('/URI'): TextStringObject(uri)
-		});
-		lnk = DictionaryObject()
-		lnk.update({
-		NameObject('/Type'): NameObject('/Annot'),
-		NameObject('/Subtype'): NameObject('/Link'),
-		NameObject('/P'): pageLink,
-		NameObject('/Rect'): rect,
-		NameObject('/H'): NameObject('/I'),
-		NameObject('/Border'): ArrayObject(borderArr),
-		NameObject('/A'): lnk2
-		})
-		lnkRef = self._addObject(lnk)
+        lnk2.update({
+        NameObject('/S'): NameObject('/URI'),
+        NameObject('/URI'): TextStringObject(uri)
+        });
+        lnk = DictionaryObject()
+        lnk.update({
+        NameObject('/Type'): NameObject('/Annot'),
+        NameObject('/Subtype'): NameObject('/Link'),
+        NameObject('/P'): pageLink,
+        NameObject('/Rect'): rect,
+        NameObject('/H'): NameObject('/I'),
+        NameObject('/Border'): ArrayObject(borderArr),
+        NameObject('/A'): lnk2
+        })
+        lnkRef = self._addObject(lnk)
 
-		if "/Annots" in pageRef:
-			pageRef['/Annots'].append(lnkRef)
-		else:
-			pageRef[NameObject('/Annots')] = ArrayObject([lnkRef])
+        if "/Annots" in pageRef:
+            pageRef['/Annots'].append(lnkRef)
+        else:
+            pageRef[NameObject('/Annots')] = ArrayObject([lnkRef])
 
     _valid_layouts = ['/NoLayout', '/SinglePage', '/OneColumn', '/TwoColumnLeft', '/TwoColumnRight', '/TwoPageLeft', '/TwoPageRight']
     
