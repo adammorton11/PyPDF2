@@ -831,8 +831,7 @@ class PdfFileWriter(object):
 
         destRef = self._addObject(dest)
         nd = self.getNamedDestRoot()
-
-        nd.extend([title, destRef])
+        nd.extend([createStringObject(title), destRef])
 
         return destRef
 
