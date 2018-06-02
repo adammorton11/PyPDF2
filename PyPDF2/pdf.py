@@ -1092,6 +1092,91 @@ class PdfFileWriter(object):
             pageRef[NameObject('/Annots')] = ArrayObject([lnkRef])
 
     _valid_layouts = ['/NoLayout', '/SinglePage', '/OneColumn', '/TwoColumnLeft', '/TwoColumnRight', '/TwoPageLeft', '/TwoPageRight']
+    
+    def generateNewAnnot(self, parent_pagenum, annot_index, target_file, target_pagenum, rect, struct_parent, border=None, fit='/Fit', *args):
+        """
+        Add an internal link from a rectangular area to the specified page.
+
+        :param int pagenum: index of the page on which to place the link.
+        :param int pagedest: index of the page to which the link should go.
+        :param rect: :class:`RectangleObject<PyPDF2.generic.RectangleObject>` or array of four
+            integers specifying the clickable rectangular area
+            ``[xLL, yLL, xUR, yUR]``, or string in the form ``"[ xLL yLL xUR yUR ]"``.
+        :param border: if provided, an array describing border-drawing
+            properties. See the PDF spec for details. No border will be
+            drawn if this argument is omitted.
+        :param str fit: Page fit or 'zoom' option (see below). Additional arguments may need
+            to be supplied. Passing ``None`` will be read as a null value for that coordinate.
+
+        Valid zoom arguments (see Table 8.2 of the PDF 1.7 reference for details):
+             /Fit       No additional arguments
+             /XYZ       [left] [top] [zoomFactor]
+             /FitH      [top]
+             /FitV      [left]
+             /FitR      [left] [bottom] [right] [top]
+             /FitB      No additional arguments
+             /FitBH     [top]
+             /FitBV     [left]
+        """
+
+        # pageLink = brief_writer.getObject(brief_writer._pages)['/Kids'][parent_pagenum]
+        # pageDest = brief_writer.getObject(brief_writer._pages)['/Kids'][pagedest] #TODO: switch for external link
+        # pageRef = brief_writer.getObject(pageLink)
+
+        if border is not None:
+            borderArr = [NameObject(n) for n in border[:3]]
+            if len(border) == 4:
+                dashPattern = ArrayObject([NameObject(n) for n in border[3]])
+                borderArr.append(dashPattern)
+        else:
+            borderArr = [NumberObject(0)] * 3
+
+        if isString(rect):
+            rect = NameObject(rect)
+        elif isinstance(rect, RectangleObject):
+            pass
+        else:
+            rect = RectangleObject(rect)
+
+        zoomArgs = []
+        for a in args:
+            if a is not None:
+                zoomArgs.append(NumberObject(a))
+            else:
+                zoomArgs.append(NullObject())
+
+        action = DictionaryObject()
+        D = createStringObject(target_file + ' ' + str(target_pagenum))
+        target = DictionaryObject()
+        target.update({
+            NameObject('/N'): createStringObject(target_file + '_with_dests.pdf'),
+            NameObject('/R'): NameObject('C')
+        })
+        action.update({
+            NameObject('/D'): D,
+            NameObject('/NewWindow'): BooleanObject(True),
+            NameObject('/S'): NameObject('GoToE'),
+            NameObject('/T'): target
+        })
+
+        # dest = Destination(NameObject("/LinkName"), pageDest, NameObject(fit), *zoomArgs) #TODO: create a better name for the link
+        # destArray = dest.getDestArray()
+
+        lnk = DictionaryObject()
+        lnk.update({
+            NameObject('/Type'): NameObject('/Annot'),
+            NameObject('/Subtype'): NameObject('/Link'),
+            NameObject('/A'): action,
+            NameObject('/Rect'): rect,
+            NameObject('/Border'): ArrayObject(borderArr),
+            NameObject('/StructParent'): NumberObject(struct_parent)
+        })
+        lnkRef = self._addObject(lnk)
+        return lnkRef
+        # if "/Annots" in pageRef:
+        #     pageRef['/Annots'].append(lnkRef)
+        # else:
+        #     pageRef[NameObject('/Annots')] = ArrayObject([lnkRef])
 
     def getPageLayout(self):
         """
