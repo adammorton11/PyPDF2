@@ -412,89 +412,71 @@ class PdfFileWriter(object):
 
         # Variables used for after cloning the root to
         # improve pre- and post- cloning experience
-
         mustAddTogether = False
         newInfoRef = self._info
         oldPagesRef = self._pages
         oldPages = self.getObject(self._pages)
 
         # If there have already been any number of pages added
-
         if oldPages[NameObject("/Count")] > 0:
-
             # Keep them
-
             mustAddTogether = True
         else:
 
-            # Through the page object out
-
+            # Throw the page object out
             if oldPages in self._objects:
                 newInfoRef = self._pages
                 self._objects.remove(oldPages)
 
         # Clone the reader's root document
-
         self.cloneReaderDocumentRoot(reader)
         if not self._root:
             self._root = self._addObject(self._root_object)
 
         # Sweep for all indirect references
-
         externalReferenceMap = {}
         self.stack = []
         newRootRef = self._sweepIndirectReferences(externalReferenceMap, self._root)
 
         # Delete the stack to reset
-
         del self.stack
 
         #Clean-Up Time!!!
 
         # Get the new root of the PDF
-
         realRoot = self.getObject(newRootRef)
 
         # Get the new pages tree root and its ID Number
-
         tmpPages = realRoot[NameObject("/Pages")]
         newIdNumForPages = 1 + self._objects.index(tmpPages)
 
         # Make an IndirectObject just for the new Pages
-
         self._pages = IndirectObject(newIdNumForPages, 0, self)
 
         # If there are any pages to add back in
-
         if mustAddTogether:
-
             # Set the new page's root's parent to the old
             # page's root's reference
-
             tmpPages[NameObject("/Parent")] = oldPagesRef
 
             # Add the reference to the new page's root in
             # the old page's kids array
-
             newPagesRef = self._pages
             oldPages[NameObject("/Kids")].append(newPagesRef)
 
             # Set all references to the root of the old/new
             # page's root
-
             self._pages = oldPagesRef
             realRoot[NameObject("/Pages")] = oldPagesRef
 
             # Update the count attribute of the page's root
-
             oldPages[NameObject("/Count")] = NumberObject(oldPages[NameObject("/Count")] + tmpPages[NameObject("/Count")])
 
         else:
-
             # Bump up the info's reference b/c the old
             # page's tree was bumped off
-
             self._info = newInfoRef
+
     def encrypt(self, user_pwd, owner_pwd = None, use_128bit = True):
         """
         Encrypt this PDF file with the PDF Standard encryption handler.
@@ -1154,10 +1136,6 @@ class PdfFileWriter(object):
              /FitBV     [left]
         """
 
-        # pageLink = brief_writer.getObject(brief_writer._pages)['/Kids'][parent_pagenum]
-        # pageDest = brief_writer.getObject(brief_writer._pages)['/Kids'][pagedest] #TODO: switch for external link
-        # pageRef = brief_writer.getObject(pageLink)
-
         if border is not None:
             borderArr = [NameObject(n) for n in border[:3]]
             if len(border) == 4:
@@ -1180,14 +1158,22 @@ class PdfFileWriter(object):
             else:
                 zoomArgs.append(NullObject())
 
-        action = DictionaryObject()
-        D = createStringObject(target_file + ' ' + str(target_pagenum))
+        #Create target dict
+        #/R    Relationship, valid options '/C' or '/P', indicates whether target is Child or Parent of current document
+        #/N    Name, must be bytestring object that matches a Filespec in the EmbeddedFiles array
         target = DictionaryObject()
         target.update({
             NameObject('/R'): NameObject('/C'),
-            NameObject('/N'): createStringObject(target_file + '_with_dests.pdf')
+            NameObject('/N'): createStringObject(target_file + '.pdf')
         })
+        #Make an IndirectReference to the target dict
         targetRef = self._addObject(target)
+
+        #Generate destination string, must match a Named Destination in the desired document
+        D = createStringObject(target_file + ' ' + str(target_pagenum))
+
+        #Create Action dict
+        action = DictionaryObject()
         action.update({
             NameObject('/Type'): NameObject('/Action'),
             NameObject('/S'): NameObject('/GoToE'),
@@ -1195,10 +1181,11 @@ class PdfFileWriter(object):
             NameObject('/NewWindow'): BooleanObject(True),
             NameObject('/T'): targetRef
         })
-        actionRef = self._addObject(action)
-        # dest = Destination(NameObject("/LinkName"), pageDest, NameObject(fit), *zoomArgs) #TODO: create a better name for the link
-        # destArray = dest.getDestArray()
 
+        #Indirect reference
+        actionRef = self._addObject(action)
+
+        #Top-level link dict
         lnk = DictionaryObject()
         lnk.update({
             NameObject('/Type'): NameObject('/Annot'),
@@ -1208,37 +1195,23 @@ class PdfFileWriter(object):
             NameObject('/Border'): ArrayObject(borderArr),
             NameObject('/StructParent'): NumberObject(struct_parent)
         })
-        # print("New lnk object", lnk)
-        # print("New lnkref", lnkRef)
-        page_link = self.getObject(self._pages)['/Kids'][parent_pagenum]
-        page_object = self.getObject(page_link)
-        # print("Page Object", page_object)
+
+        page_containing_link = self.getObject(self._pages)['/Kids'][parent_pagenum]
+        page_object = self.getObject(page_containing_link)
+
         annot_array = page_object['/Annots']
-        print("Annot array:", annot_array)
+
+        #Get the indirectReference to the existing annot
         oldAnnot = annot_array[annot_index]
+        #Get the actual object
         oldAnnotObject = oldAnnot.getObject()
-        print("Specific existing annot ref:", oldAnnot)
-        print("Specific existing annot object", oldAnnotObject)
-        # print("Self Objects", self._objects)
+
+        #Replace the old with the new in the object tree, get a new IndirectReference to the new annot
         lnkRef = self._replaceObject(oldAnnotObject, lnk)
-        print("Replacement annot:", lnk)
-        print("Replacement annot ref:", lnkRef)
-        # if oldAnnot in self._objects:
-        #     print("Oldannot IS in objects")
-        #     self._objects.remove(oldAnnot)
-        # if oldAnnotObject in self._objects:
-        #     print("Oldannot OBJECT IS in objects")
-        #     self._objects.remove(oldAnnotObject)
 
-        # lnkRef = self._addObject(lnk)
-
+        #Swap the reference in the annots array
         annot_array[annot_index] = lnkRef
         return lnkRef
-        # if "/Annots" in pageRef:
-        #     pageRef['/Annots'].append(lnkRef)
-        # else:
-        #     pageRef[NameObject('/Annots')] = ArrayObject([lnkRef])
-
 
 
     _valid_layouts = ['/NoLayout', '/SinglePage', '/OneColumn', '/TwoColumnLeft', '/TwoColumnRight', '/TwoPageLeft', '/TwoPageRight']

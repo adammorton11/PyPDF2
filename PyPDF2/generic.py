@@ -147,7 +147,7 @@ class ArrayObject(list, PdfObject):
             try:
                 data.writeToStream(stream, encryption_key)
             except:
-                print("WriteToStream offending data is", data)
+                print("WriteToStream failed, broken data is", data)
         stream.write(b_(" ]"))
 
     def readFromStream(stream, pdf):
