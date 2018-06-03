@@ -45,12 +45,6 @@ import decimal
 import codecs
 import sys
 #import debugging
-from sys import version_info
-
-if version_info < ( 2, 5 ):
-    from md5 import md5
-else:
-    from hashlib import md5
 
 ObjectPrefix = b_('/<[tf(n%')
 NumberSigns = b_('+-')
@@ -110,10 +104,6 @@ class PdfObject(object):
         """Resolves indirect references."""
         return self
 
-    def hashValue(self):
-        """Return hash for deduplication or None"""
-        return None
-
 
 class NullObject(PdfObject):
     def writeToStream(self, stream, encryption_key):
@@ -150,24 +140,14 @@ class BooleanObject(PdfObject):
 
 
 class ArrayObject(list, PdfObject):
-    def hashValue(self):
-        md5Hash = md5()
-
-        for value in self:
-            if isinstance(value, PdfObject):
-                subHash = value.hashValue()
-                if subHash is not None:
-                    md5Hash.update(subHash)
-            else:
-                md5Hash.update(value)
-
-        return "ArrayObject:" + md5Hash.hexdigest()
-
     def writeToStream(self, stream, encryption_key):
         stream.write(b_("["))
         for data in self:
             stream.write(b_(" "))
-            data.writeToStream(stream, encryption_key)
+            try:
+                data.writeToStream(stream, encryption_key)
+            except:
+                print("WriteToStream offending data is", data)
         stream.write(b_(" ]"))
 
     def readFromStream(stream, pdf):
@@ -200,9 +180,6 @@ class IndirectObject(PdfObject):
 
     def getObject(self):
         return self.pdf.getObject(self).getObject()
-
-    def hashValue(self):
-        return "IndirectObject<%s>:(%r,%r)" % (hex(id(self.pdf)), self.idnum, self.generation)
 
     def __repr__(self):
         return "IndirectObject(%r, %r)" % (self.idnum, self.generation)
@@ -366,55 +343,56 @@ def readStringFromStream(stream):
                 break
         elif tok == b_("\\"):
             tok = stream.read(1)
-            if tok == b_("n"):
-                tok = b_("\n")
-            elif tok == b_("r"):
-                tok = b_("\r")
-            elif tok == b_("t"):
-                tok = b_("\t")
-            elif tok == b_("b"):
-                tok = b_("\b")
-            elif tok == b_("f"):
-                tok = b_("\f")
-            elif tok == b_("c"):
-                tok = b_("\c")
-            elif tok == b_("("):
-                tok = b_("(")
-            elif tok == b_(")"):
-                tok = b_(")")
-            elif tok == b_("/"):
-                tok = b_("/")
-            elif tok == b_("\\"):
-                tok = b_("\\")
-            elif tok in (b_(" "), b_("/"), b_("%"), b_("<"), b_(">"), b_("["), 
-                    b_("]"), b_("#"),  b_("_"), b_("&"), b_('$')):
-                # odd/unnessecary escape sequences we have encountered
-                tok = b_(tok)
-            elif tok.isdigit():
-                # "The number ddd may consist of one, two, or three
-                # octal digits; high-order overflow shall be ignored.
-                # Three octal digits shall be used, with leading zeros
-                # as needed, if the next character of the string is also
-                # a digit." (PDF reference 7.3.4.2, p 16)
-                for i in range(2):
-                    ntok = stream.read(1)
-                    if ntok.isdigit():
-                        tok += ntok
-                    else:
-                        break
-                tok = b_(chr(int(tok, base=8)))
-            elif tok in b_("\n\r"):
-                # This case is  hit when a backslash followed by a line
-                # break occurs.  If it's a multi-char EOL, consume the
-                # second character:
-                tok = stream.read(1)
-                if not tok in b_("\n\r"):
-                    stream.seek(-1, 1)
-                # Then don't add anything to the actual string, since this
-                # line break was escaped:
-                tok = b_('')
-            else:
-                raise utils.PdfReadError(r"Unexpected escaped string: %s" % tok)
+            ESCAPE_DICT = {b_("n") : b_("\n"),
+                           b_("r") : b_("\r"),
+                           b_("t") : b_("\t"),
+                           b_("b") : b_("\b"),
+                           b_("f") : b_("\f"),
+                           b_("c") : b_("\c"),
+                           b_("(") : b_("("),
+                           b_(")") : b_(")"),
+                           b_("/") : b_("/"),
+                           b_("\\") : b_("\\"),
+                           b_(" ") : b_(" "),
+                           b_("/") : b_("/"),
+                           b_("%") : b_("%"),
+                           b_("<") : b_("<"),
+                           b_(">") : b_(">"),
+                           b_("[") : b_("["), 
+                           b_("]") : b_("]"),
+                           b_("#") : b_("#"),
+                           b_("_") : b_("_"),
+                           b_("&") : b_("&"),
+                           b_('$') : b_('$'),
+                           }
+            try:
+                tok = ESCAPE_DICT[tok]
+            except KeyError:
+                if tok.isdigit():
+                    # "The number ddd may consist of one, two, or three
+                    # octal digits; high-order overflow shall be ignored.
+                    # Three octal digits shall be used, with leading zeros
+                    # as needed, if the next character of the string is also
+                    # a digit." (PDF reference 7.3.4.2, p 16)
+                    for i in range(2):
+                        ntok = stream.read(1)
+                        if ntok.isdigit():
+                            tok += ntok
+                        else:
+                            break
+                    tok = b_(chr(int(tok, base=8)))
+                elif tok in b_("\n\r"):
+                    # This case is  hit when a backslash followed by a line
+                    # break occurs.  If it's a multi-char EOL, consume the
+                    # second character:
+                    tok = stream.read(1)
+                    if not tok in b_("\n\r"):
+                        stream.seek(-1, 1)
+                    # Then don't add anything to the actual string, since this
+                    # line break was escaped:
+                    tok = b_('')
+                else:
+                    raise utils.PdfReadError(r"Unexpected escaped string: %s" % tok)
         txt += tok
     return createStringObject(txt)
 
@@ -495,11 +473,6 @@ class NameObject(str, PdfObject):
     delimiterPattern = re.compile(b_(r"\s+|[\(\)<>\[\]{}/%]"))
     surfix = b_("/")
 
-    def hashValue(self):
-        md5Hash = md5()
-        md5Hash.update(b_(self))
-        return "NameObject:" + md5Hash.hexdigest()
-
     def writeToStream(self, stream, encryption_key):
         stream.write(b_(self))
 
@@ -515,16 +488,13 @@ class NameObject(str, PdfObject):
         try:
             return NameObject(name.decode('utf-8'))
         except (UnicodeEncodeError, UnicodeDecodeError) as e:
-            try:
-                return NameObject(decode_pdfdocencoding(name))
-            except UnicodeDecodeError:
-                # Name objects should represent irregular characters
-                # with a '#' followed by the symbol's hex number
-                if not pdf.strict:
-                    warnings.warn("Illegal character in Name Object", utils.PdfReadWarning)
-                    return NameObject(name)
-                else:
-                    raise utils.PdfReadError("Illegal character in Name Object")
+            # Name objects should represent irregular characters
+            # with a '#' followed by the symbol's hex number
+            if not pdf.strict:
+                warnings.warn("Illegal character in Name Object", utils.PdfReadWarning)
+                return NameObject(name)
+            else:
+                raise utils.PdfReadError("Illegal character in Name Object")
 
     readFromStream = staticmethod(readFromStream)
 
@@ -578,26 +548,12 @@ class DictionaryObject(dict, PdfObject):
 
     def writeToStream(self, stream, encryption_key):
         stream.write(b_("<<\n"))
-        for key, value in sorted(list(self.items())):
+        for key, value in list(self.items()):
             key.writeToStream(stream, encryption_key)
             stream.write(b_(" "))
             value.writeToStream(stream, encryption_key)
             stream.write(b_("\n"))
         stream.write(b_(">>"))
-
-    def hashValue(self):
-        md5Hash = md5()
-
-        for key, value in self.items():
-            md5Hash.update(key)
-            if isinstance(value, PdfObject):
-                subHash = value.hashValue()
-                if subHash is not None:
-                    md5Hash.update(subHash)
-            else:
-                md5Hash.update(value)
-
-        return "DictionaryObject:" + md5Hash.hexdigest()
 
     def readFromStream(stream, pdf):
         debug = False
@@ -653,10 +609,10 @@ class DictionaryObject(dict, PdfObject):
             assert "/Length" in data
             length = data["/Length"]
             if debug: print(data)
-            stream_start = stream.tell()
             if isinstance(length, IndirectObject):
+                t = stream.tell()
                 length = pdf.getObject(length)
-                stream.seek(stream_start, 0)
+                stream.seek(t, 0)
             data["__streamdata__"] = stream.read(length)
             if debug: print("here")
             #if debug: print(binascii.hexlify(data["__streamdata__"]))
@@ -676,18 +632,9 @@ class DictionaryObject(dict, PdfObject):
                     # we found it by looking back one character further.
                     data["__streamdata__"] = data["__streamdata__"][:-1]
                 else:
-                    # Handle stream that is few bytes longer than expected
-                    stream.seek(stream_start + length, 0)
-                    extra = stream.read(50)
-                    p = extra.find(b_("endstream"))
-                    if p >= 0:
-                        stream.seek(stream_start + length + p + 9, 0)
-                        extra = extra[:p].rstrip(b_('\r\n '))
-                        data["__streamdata__"] = data["__streamdata__"] + extra
-                    else:
-                        if debug: print(("E", e, ndstream, debugging.toHex(end)))
-                        stream.seek(pos, 0)
-                        raise utils.PdfReadError("Unable to find 'endstream' marker after stream at byte %s." % utils.hexStr(stream.tell()))
+                    if debug: print(("E", e, ndstream, debugging.toHex(end)))
+                    stream.seek(pos, 0)
+                    raise utils.PdfReadError("Unable to find 'endstream' marker after stream at byte %s." % utils.hexStr(stream.tell()))
         else:
             stream.seek(pos, 0)
         if "__streamdata__" in data:
@@ -834,7 +781,6 @@ class StreamObject(DictionaryObject):
     def __init__(self):
         self._data = None
         self.decodedSelf = None
-        self._hashValue = None
 
     def writeToStream(self, stream, encryption_key):
         self[NameObject("/Length")] = NumberObject(len(self._data))
@@ -876,25 +822,18 @@ class StreamObject(DictionaryObject):
         retval._data = filters.FlateDecode.encode(self._data)
         return retval
 
-    def hashValue(self):
-        if self._hashValue is None:
-            self._hashValue = "StreamObject:" + md5(self._data).hexdigest()
-        return self._hashValue
-
 
 class DecodedStreamObject(StreamObject):
     def getData(self):
         return self._data
 
     def setData(self, data):
-        self._hashValue = None
         self._data = data
 
 
 class EncodedStreamObject(StreamObject):
     def __init__(self):
         self.decodedSelf = None
-        self._hashValue = None
 
     def getData(self):
         if self.decodedSelf:
