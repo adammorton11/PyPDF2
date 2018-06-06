@@ -279,9 +279,7 @@ class PdfFileWriter(object):
         """
         file_entry = DecodedStreamObject()
         file_entry.setData(fdata)
-        file_entry.update({
-                NameObject("/Type"): NameObject("/EmbeddedFile")
-                })
+        file_entry_ref = self._addObject(file_entry)
 
         # The Filespec entry
         """ Sample:
@@ -292,16 +290,20 @@ class PdfFileWriter(object):
          /EF << /F 8 0 R >>
         >>
         """
+
         efEntry = DictionaryObject()
-        efEntry.update({ NameObject("/F"):file_entry })
+        efEntry.update({ NameObject("/F"): file_entry_ref,
+            })
 
         filespec = DictionaryObject()
         filespec.update({
+                NameObject("/EF"): efEntry,
+                NameObject("/F"): TextStringObject(fname),  # Perhaps also try TextStringObject
                 NameObject("/Type"): NameObject("/Filespec"),
-                NameObject("/F"): createStringObject(fname),  # Perhaps also try TextStringObject
-                NameObject("/EF"): efEntry
+                NameObject("/UF"): createStringObject(codecs.BOM_UTF16_BE + u_(fname).encode('utf-16be'))
                 })
 
+        filespecref = self._addObject(filespec)
         # Then create the entry for the root, as it needs a reference to the Filespec
         """ Sample:
         1 0 obj
@@ -314,27 +316,24 @@ class PdfFileWriter(object):
         endobj
         """
         try:
-            namesDict = self._root_object["/Names"]
+            existingNamesArray = self._root_object["/Names"]["/EmbeddedFiles"]["/Names"]
+            assert isinstance(existingNamesArray, ArrayObject)
+            existingNamesArray = ArrayObject(existingNamesArray)
         except:
-            namesDict = DictionaryObject()
-        try:
-            embeddedFilesDict = namesDict["/EmbeddedFiles"]
-        except:
-            newDict = DictionaryObject()
-            namesDict.update({NameObject("/EmbeddedFiles"): newDict})
-            embeddedFilesDict = namesDict["/EmbeddedFiles"]
-        try:
-            internalNamesArray = embeddedFilesDict["/Names"]
-            internalNamesArray.append(createStringObject(fname))
-            internalNamesArray.append(filespec)
-        except:
-            embeddedFilesDict.update({NameObject("/Names"): ArrayObject([createStringObject(fname), filespec])
-                })
-            internalNamesArray = embeddedFilesDict["/Names"]
+            existingNamesArray = ArrayObject()
 
-        self._root_object.update({
-            NameObject("/Names"): namesDict
-        })
+        newNamesArray = existingNamesArray
+        newNamesArray.append(createStringObject(fname))
+        newNamesArray.append(filespecref)
+        embeddedFilesDict = DictionaryObject()
+        embeddedFilesDict.update({NameObject("/Names"): newNamesArray})
+
+        namesDict = DictionaryObject()
+        namesDict.update({NameObject("/EmbeddedFiles"): embeddedFilesDict})
+
+        self._root_object.update({NameObject("/Names"): namesDict})
+
+
     def appendPagesFromReader(self, reader, after_page_append=None):
         """
         Copy pages from reader to writer. Includes an optional callback parameter
@@ -1144,12 +1143,12 @@ class PdfFileWriter(object):
         else:
             borderArr = [NumberObject(0)] * 3
 
-        # if isString(rect):
-        #     rect = NameObject(rect)
-        # elif isinstance(rect, RectangleObject):
-        #     pass
-        # else:
-        #     rect = RectangleObject(rect)
+        if isString(rect):
+            rect = NameObject(rect)
+        elif isinstance(rect, RectangleObject):
+            pass
+        else:
+            rect = RectangleObject(rect)
 
         zoomArgs = []
         for a in args:
